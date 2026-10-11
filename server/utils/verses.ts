@@ -1,13 +1,49 @@
 import { inArray } from 'drizzle-orm'
-import { parseTokens, normalizeRef, type Token } from '#shared/utils/verses'
+import { parseTokens, normalizeRef, displayRef, type Token } from '#shared/utils/verses'
 import { db } from '../db'
 import { verses } from '../db/schema'
 
-type LookupResult = { book: string; chapter: number; verseStart: number; verseEnd: number; text: string }
+type LookupResult = { book: string; chapter: number; verseStart: number; verseEnd: number; text: string; translation: string }
 
-// TODO: wire to the chosen scripture API. Returning null means the token renders as "Couldn't find …".
-async function lookupVerse(_t: Token): Promise<LookupResult | null> {
-  return null
+const ESV_ENDPOINT = 'https://api.esv.org/v3/passage/text/'
+let warnedNoKey = false
+
+/**
+ * Crossway ESV API (https://api.esv.org). Free key, ESV only.
+ * Returns null for an unknown reference or when ESV_API_KEY is not configured.
+ */
+async function lookupVerse(t: Token): Promise<LookupResult | null> {
+  const key = process.env.ESV_API_KEY
+  if (!key) {
+    if (!warnedNoKey) {
+      console.warn('[verses] ESV_API_KEY is not set; verse tokens will render as "Could not find"')
+      warnedNoKey = true
+    }
+    return null
+  }
+
+  const params = new URLSearchParams({
+    q: displayRef(t),
+    'include-headings': 'false',
+    'include-footnotes': 'false',
+    'include-verse-numbers': 'false',
+    'include-short-copyright': 'false',
+    'include-passage-references': 'false',
+    'indent-paragraphs': '0',
+    'indent-poetry': 'false',
+  })
+
+  try {
+    const res = await $fetch<{ canonical?: string; passages?: string[] }>(`${ESV_ENDPOINT}?${params}`, {
+      headers: { Authorization: `Token ${key}` },
+    })
+    const raw = res.passages?.[0]?.replace(/\s+/g, ' ').trim()
+    if (!raw) return null
+    return { book: t.book, chapter: t.chapter, verseStart: t.verseStart, verseEnd: t.verseEnd, text: raw, translation: 'ESV' }
+  } catch (e) {
+    console.warn('[verses] ESV lookup failed for', displayRef(t), (e as Error).message)
+    return null
+  }
 }
 
 /** Called on Save. Resolves uncached references and stores the hits. Never throws on a miss. */
