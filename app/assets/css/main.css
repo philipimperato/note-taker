@@ -64,19 +64,7 @@
   --ui-border-inverted: var(--color-ink-50);
 }
 
-/* Light (opt-in only via html.light) */
-:root.light {
-  --ui-bg: #faf8f3;
-  --ui-bg-muted: #f2efe8;
-  --ui-bg-elevated: #ffffff;
-  --ui-bg-accented: #ebe7de;
-  --ui-text: #2a2721;
-  --ui-text-highlighted: #141311;
-  --ui-text-muted: #6f6a60;
-  --ui-text-dimmed: #9b968b;
-  --ui-border: #e2ddd2;
-  --ui-border-accented: #cfc9bc;
-}
+/* No light theme yet: the app is dark regardless of system or stored color-mode preference. */
 
 /* Reading typography — apply .prose-note to the rendered note body */
 @utility prose-note {
