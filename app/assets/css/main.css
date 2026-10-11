@@ -38,7 +38,7 @@
 }
 
 :root {
-  --ui-radius: 0.5rem;             /* 8px — Today button, list rows, desktop verse block (10px) */
+  --ui-radius: 0.25rem;            /* rounded-sm globally; pills, Today button and verse block set their own */
   --ui-container: 660px;
 }
 

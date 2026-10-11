@@ -33,6 +33,16 @@ export default defineAppConfig({
       defaultVariants: { color: 'primary', variant: 'solid', size: 'md' },
     },
 
+    // Form inputs: comfortable 44px fields (mobile tap target), subtle radius.
+    input: {
+      slots: { base: 'h-11 text-base rounded-sm', root: 'w-full' },
+      defaultVariants: { size: 'xl' },
+    },
+    pinInput: {
+      slots: { base: 'size-12 text-lg rounded-sm' },
+      defaultVariants: { size: 'xl' },
+    },
+
     // The note editor: no box, no ring — text sits on the page.
     textarea: {
       slots: {
