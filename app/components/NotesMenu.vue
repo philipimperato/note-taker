@@ -37,7 +37,7 @@ function pick(date: string, hasNote = savedDates.value.has(date)) {
 
     <Button block class="h-10 rounded-lg" @click="pick(todayLocal())">Today</Button>
 
-    <div class="min-h-0 flex-1 overflow-y-auto">
+    <div class="-mx-1 min-h-0 flex-1 overflow-y-auto px-1">
       <NotesList v-if="view === 'list'" :notes="notes" :selected="selected" compact @select="pick" />
       <NotesCalendar v-else :selected="selected" :previews="previews" compact @select="pick" />
     </div>
@@ -50,7 +50,7 @@ function pick(date: string, hasNote = savedDates.value.has(date)) {
   <!-- Mobile full-screen sheet -->
   <div v-else class="flex min-h-dvh flex-col bg-default px-6 pb-10 pt-3">
     <div class="-mx-2 flex h-[54px] items-center justify-between">
-      <Button color="neutral" variant="ghost" icon="i-lucide-x" aria-label="Close" class="size-11" @click="emit('close')" />
+      <Button color="neutral" variant="ghost" icon="i-lucide-x" aria-label="Close" square class="size-11" @click="emit('close')" />
       <Tabs v-model="view" :items="tabs" :content="false" />
       <span class="w-[34px]" />
     </div>

@@ -42,8 +42,9 @@
   --ui-container: 660px;
 }
 
-/* Dark is the default (see nuxt.config colorMode). Map Nuxt UI semantic tokens to the ink scale. */
-.dark {
+/* Dark is the default for everyone. Map Nuxt UI semantic tokens to the ink scale on :root so the
+   app is dark even before color-mode hydrates or if a stale 'light' preference is stored. */
+:root, .dark {
   --ui-bg:            var(--color-ink-950);
   --ui-bg-muted:      var(--color-ink-975);
   --ui-bg-elevated:   var(--color-ink-900);
@@ -63,8 +64,8 @@
   --ui-border-inverted: var(--color-ink-50);
 }
 
-/* Light fallback (not the default) */
-:root:not(.dark) {
+/* Light (opt-in only via html.light) */
+:root.light {
   --ui-bg: #faf8f3;
   --ui-bg-muted: #f2efe8;
   --ui-bg-elevated: #ffffff;

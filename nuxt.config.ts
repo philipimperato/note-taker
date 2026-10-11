@@ -16,6 +16,7 @@ export default defineNuxtConfig({
   app: {
     head: {
       title: 'NoteTaker',
+      htmlAttrs: { class: 'dark', style: 'color-scheme: dark' },
       meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' }],
     },
   },
