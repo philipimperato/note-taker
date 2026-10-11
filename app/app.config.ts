@@ -48,6 +48,10 @@ export default defineAppConfig({
         indicator: 'rounded-full bg-[#2e2b25] shadow-none',
         trigger: 'rounded-full h-[30px] px-4 text-[13px] font-medium text-muted data-[state=active]:text-highlighted',
       },
+      compoundVariants: [
+        { color: 'neutral', variant: 'pill',
+          class: { indicator: 'bg-[#2e2b25]', trigger: 'data-[state=active]:text-highlighted' } },
+      ],
       defaultVariants: { color: 'neutral', variant: 'pill', size: 'sm' },
     },
 

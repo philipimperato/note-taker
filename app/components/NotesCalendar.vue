@@ -38,6 +38,9 @@ const cells = computed(() => {
 
 const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
 
+const arrowClass = computed(() => (props.compact ? 'size-7 rounded-full' : 'size-9 rounded-full'))
+const arrowUi = computed(() => ({ base: 'p-0 shrink-0', leadingIcon: props.compact ? 'size-4' : 'size-5' }))
+
 const selectedLabel = computed(() =>
   fromIsoDate(props.selected).toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) +
   ' · ' +
@@ -59,8 +62,8 @@ function onTouchEnd(e: TouchEvent) {
       <h2 v-if="compact" class="font-serif text-[15px] font-medium text-highlighted">{{ monthLabel }}</h2>
       <h2 v-else class="heading-date">{{ monthLabel }}</h2>
       <div class="flex gap-1.5">
-        <Button color="neutral" variant="outline" icon="i-lucide-chevron-left" aria-label="Previous month" square :class="compact ? 'size-7 rounded-full' : 'size-9 rounded-full'" @click="shiftMonth(-1)" />
-        <Button color="neutral" variant="outline" icon="i-lucide-chevron-right" aria-label="Next month" square :class="compact ? 'size-7 rounded-full' : 'size-9 rounded-full'" @click="shiftMonth(1)" />
+        <Button color="neutral" variant="outline" icon="i-lucide-chevron-left" aria-label="Previous month" square :class="arrowClass" :ui="arrowUi" @click="shiftMonth(-1)" />
+        <Button color="neutral" variant="outline" icon="i-lucide-chevron-right" aria-label="Next month" square :class="arrowClass" :ui="arrowUi" @click="shiftMonth(1)" />
       </div>
     </div>
 
