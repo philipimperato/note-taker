@@ -8,7 +8,7 @@ export default defineAppConfig({
 
     button: {
       slots: {
-        base: 'rounded-full font-medium transition-colors cursor-pointer justify-center',
+        base: 'rounded-sm font-medium transition-colors cursor-pointer justify-center',
       },
       variants: {
         size: {

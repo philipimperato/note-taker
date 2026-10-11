@@ -27,7 +27,7 @@ const weekday = (iso: string) => fromIsoDate(iso).toLocaleDateString(undefined, 
 <template>
   <div v-if="!notes.length" class="pt-2">
     <p class="font-serif text-[17px] leading-relaxed text-toned">No notes yet. Today is a good day to start.</p>
-    <Button class="mt-5 rounded-lg" size="lg" @click="emit('select', todayLocal())">Today</Button>
+    <Button class="mt-5" size="lg" @click="emit('select', todayLocal())">Today</Button>
   </div>
 
   <!-- Desktop compact rows -->

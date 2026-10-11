@@ -35,7 +35,7 @@ function pick(date: string, hasNote = savedDates.value.has(date)) {
       <Tabs v-model="view" :items="tabs" :content="false" size="xs" :ui="{ trigger: 'h-[26px] px-3 text-xs' }" />
     </div>
 
-    <Button block class="h-10 rounded-lg" @click="pick(todayLocal())">Today</Button>
+    <Button block class="h-10" @click="pick(todayLocal())">Today</Button>
 
     <div class="-mx-1 min-h-0 flex-1 overflow-y-auto px-1">
       <NotesList v-if="view === 'list'" :notes="notes" :selected="selected" compact @select="pick" />
