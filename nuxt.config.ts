@@ -20,6 +20,9 @@ export default defineNuxtConfig({
       meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' }],
     },
   },
+  // Bundle server deps into the Nitro output. Nitro's traced node_modules uses symlinks that break
+  // when a deploy is zipped on Windows (dangling '@better-auth/utils' etc. on Netlify).
+  nitro: { noExternals: true },
   // Day screens depend on the client's local date, so render them on the client only.
   routeRules: {
     '/': { ssr: false },
