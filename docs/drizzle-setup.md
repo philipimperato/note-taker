@@ -14,19 +14,17 @@ pnpm add -D drizzle-kit
 
 ## 2. Environment
 
-```ini
-DATABASE_URL=postgresql://...            # from Neon Console → Connection details
-NEON_AUTH_BASE_URL=https://ep-xxx.neonauth.<region>.aws.neon.build/neondb/auth
-```
+`neon link` writes `.env.local` with `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `NEON_BRANCH`, `NEON_AUTH_BASE_URL`, and `NEON_AUTH_JWKS_URL`. It is git-ignored. The `dev` script loads it with `--dotenv .env.local`, and `drizzle.config.ts` loads it with `process.loadEnvFile` so the `db:*` scripts see the same values. Re-run `neon deploy` to refresh it.
 
-Neon Auth is configured per branch. Enable it on the branch before running migrations, because `note.user_id` has a foreign key to `neon_auth.user`.
+Neon Auth is configured per branch (`auth: true` in `neon.ts`). Enable it on the branch before running migrations, because `note.user_id` has a foreign key to `neon_auth.user`.
 
 ## 3. Files to create
 
 ```
 server/
   db/
-    schema.ts              # app tables + reference to neon_auth.user
+    auth-schema.ts         # neon_auth.user, for typed joins only (not migrated by drizzle-kit)
+    schema.ts              # app tables
     index.ts               # db client (Nitro-side only)
   utils/
     auth.ts                # createNeonAuth + requireUser helper
@@ -51,6 +49,10 @@ drizzle.config.ts
 
 ```ts
 import { defineConfig } from 'drizzle-kit'
+import { existsSync } from 'node:fs'
+
+// `neon link` / `neon deploy` write .env.local; drizzle-kit only reads .env on its own.
+if (existsSync('.env.local')) process.loadEnvFile('.env.local')
 
 export default defineConfig({
   dialect: 'postgresql',
@@ -61,27 +63,33 @@ export default defineConfig({
 })
 ```
 
-## 5. server/db/schema.ts
+## 5. server/db/auth-schema.ts and server/db/schema.ts
+
+Neon Auth owns and migrates the `neon_auth` schema. drizzle-kit's `schemaFilter` only limits introspection, not generation, so any table it can see in the schema file gets a `CREATE TABLE`. The auth table therefore lives in its own file, outside the `schema` glob in `drizzle.config.ts`, and is imported only by app code that needs typed joins.
 
 ```ts
-import { pgSchema, pgTable, text, integer, date, timestamp, uuid, uniqueIndex } from 'drizzle-orm/pg-core'
+// server/db/auth-schema.ts  (not in drizzle.config.ts)
+import { pgSchema, uuid, text } from 'drizzle-orm/pg-core'
 
-// Owned and migrated by Neon Auth. Declared here only so Drizzle can build the FK and joins.
-// Keep it minimal; Neon Auth manages the real columns.
 export const neonAuth = pgSchema('neon_auth')
 export const authUsers = neonAuth.table('user', {
-  id: text('id').primaryKey(),
+  id: uuid('id').primaryKey(),
   email: text('email').notNull(),
   name: text('name'),
 })
+```
+
+```ts
+// server/db/schema.ts
+import { pgTable, text, integer, date, timestamp, uuid, uniqueIndex } from 'drizzle-orm/pg-core'
 
 export const notes = pgTable(
   'note',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    userId: text('user_id')
-      .notNull()
-      .references(() => authUsers.id, { onDelete: 'cascade' }),
+    // FK to neon_auth.user(id) ON DELETE CASCADE is declared in drizzle/0000_init.sql,
+    // not here, so drizzle-kit never touches the Neon-owned schema.
+    userId: uuid('user_id').notNull(),
     noteDate: date('note_date', { mode: 'string' }).notNull(),   // 'YYYY-MM-DD', local calendar day
     body: text('body'),                                          // saved raw text incl. [Book C:V] tokens; NULL = never saved
     draftBody: text('draft_body'),                               // autosave; NULL = no pending draft
@@ -107,7 +115,14 @@ export type Note = typeof notes.$inferSelect
 export type Verse = typeof verses.$inferSelect
 ```
 
-Because `schemaFilter` excludes `neon_auth`, drizzle-kit will not try to create or alter the `user` table. It still emits the foreign key in the `note` migration. Verify the column name and type of `neon_auth.user.id` in the Neon Console before the first migration; Better Auth uses `text` ids.
+The foreign key is appended by hand to the first migration, after the generated statements:
+
+```sql
+--> statement-breakpoint
+ALTER TABLE "note" ADD CONSTRAINT "note_user_id_fk" FOREIGN KEY ("user_id") REFERENCES "neon_auth"."user"("id") ON DELETE cascade;
+```
+
+`neon_auth.user.id` is a `uuid` on this project (verified against the production branch). drizzle-kit does not know about this FK, which is fine for `generate` and `migrate`; avoid `drizzle-kit push`, which would try to drop it.
 
 ## 6. server/db/index.ts
 
@@ -142,7 +157,7 @@ pnpm drizzle-kit migrate
 }
 ```
 
-Run `db:migrate` against each Neon branch (dev, preview, prod) after Neon Auth is enabled on that branch. Avoid `drizzle-kit push` here; it can be aggressive with schemas it does not own.
+Run `db:migrate` against each Neon branch (dev, preview, prod) after Neon Auth is enabled on that branch. The first migration (`drizzle/0000_init.sql`) has already been applied to `production`. Avoid `drizzle-kit push`; it does not know about the hand-written FK.
 
 ## 8. Auth glue
 
@@ -416,4 +431,4 @@ The client always sends its local `YYYY-MM-DD` as `today`. The server never comp
 
 ## 13. Verify before copying
 
-The Neon Auth SDK is in beta. Confirm the export names in [auth-with-neon.md](./auth-with-neon.md) (`createNeonAuth`, `createAuthClient`, `getSession`, `handler`) against the package README before building. Also confirm the exact column name and type of the user id in the `neon_auth` schema, since the foreign key in `schema.ts` depends on it.
+The Neon Auth SDK is in beta. Confirm the export names in [auth-with-neon.md](./auth-with-neon.md) (`createNeonAuth`, `createAuthClient`, `getSession`, `handler`) against the package README before building. The `neon_auth.user.id` column has been confirmed as `uuid` on the production branch.

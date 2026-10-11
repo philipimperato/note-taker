@@ -23,7 +23,7 @@ One row per (user, date). Saved body and draft live on the same row.
 | Column       | Type                 | Notes                                                                  |
 |--------------|----------------------|------------------------------------------------------------------------|
 | id           | uuid, pk             |                                                                        |
-| user_id      | text, fk → neon_auth.user.id | Neon Auth user. Part of the unique key. `ON DELETE CASCADE`.      |
+| user_id      | uuid, fk → neon_auth.user.id | Neon Auth user. Part of the unique key. `ON DELETE CASCADE`.      |
 | note_date    | date                 | Local calendar day the note is for. Unique with `user_id`.             |
 | body         | text, nullable       | Saved (published) raw text incl. tokens. NULL = never saved.           |
 | draft_body   | text, nullable       | Autosaved draft. Set to NULL on Save. NULL = no pending draft.         |

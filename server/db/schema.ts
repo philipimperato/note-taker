@@ -1,20 +1,12 @@
-import { pgSchema, pgTable, text, integer, date, timestamp, uuid, uniqueIndex } from 'drizzle-orm/pg-core'
-
-// Owned and migrated by Neon Auth. Declared only so Drizzle can build the FK and joins.
-export const neonAuth = pgSchema('neon_auth')
-export const authUsers = neonAuth.table('user', {
-  id: text('id').primaryKey(),
-  email: text('email').notNull(),
-  name: text('name'),
-})
+import { pgTable, text, integer, date, timestamp, uuid, uniqueIndex } from 'drizzle-orm/pg-core'
 
 export const notes = pgTable(
   'note',
   {
     id: uuid('id').primaryKey().defaultRandom(),
-    userId: text('user_id')
-      .notNull()
-      .references(() => authUsers.id, { onDelete: 'cascade' }),
+    // FK to neon_auth.user(id) ON DELETE CASCADE is declared in drizzle/0000_init.sql,
+    // not here, so drizzle-kit never touches the Neon-owned schema.
+    userId: uuid('user_id').notNull(),
     noteDate: date('note_date', { mode: 'string' }).notNull(), // 'YYYY-MM-DD', local calendar day
     body: text('body'),            // saved raw text incl. [Book C:V] tokens; NULL = never saved
     draftBody: text('draft_body'), // autosave; NULL = no pending draft
