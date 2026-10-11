@@ -1,0 +1,117 @@
+/* assets/css/main.css — Nuxt UI v3 (Tailwind v4) theme for Daily Notes */
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+@theme static {
+  /* Primary — ember (orange), 500 = #d97757 */
+  --color-ember-50:  #fbf3ee;
+  --color-ember-100: #f6e3d8;
+  --color-ember-200: #edc6b2;
+  --color-ember-300: #e4a88c;
+  --color-ember-400: #e8906f; /* hover tint used in mockups */
+  --color-ember-500: #d97757;
+  --color-ember-600: #c4623f;
+  --color-ember-700: #a04e31;
+  --color-ember-800: #7d3e28;
+  --color-ember-900: #5e3020;
+  --color-ember-950: #33180f;
+
+  /* Neutral — ink (warm gray), mapped to mockup values */
+  --color-ink-50:  #ece8df; /* text primary */
+  --color-ink-100: #e4dfd4; /* body text */
+  --color-ink-200: #cfc9bc;
+  --color-ink-300: #b5afa3; /* secondary text */
+  --color-ink-400: #9b968b; /* muted */
+  --color-ink-500: #6f6a60; /* hint / disabled */
+  --color-ink-600: #4a463f; /* future days */
+  --color-ink-700: #3a372f; /* outline border */
+  --color-ink-800: #24221d; /* hairline */
+  --color-ink-900: #1c1a16; /* raised surface (verse callout) */
+  --color-ink-925: #1f1d18; /* chips / selected row */
+  --color-ink-950: #141311; /* page bg */
+  --color-ink-975: #111009; /* sidebar bg */
+
+  --font-sans: system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: "Source Serif 4", Georgia, serif;
+
+  --radius-pill: 999px;
+}
+
+:root {
+  --ui-radius: 0.5rem;             /* 8px — Today button, list rows, desktop verse block (10px) */
+  --ui-container: 660px;
+}
+
+/* Dark is the default (see nuxt.config colorMode). Map Nuxt UI semantic tokens to the ink scale. */
+.dark {
+  --ui-bg:            var(--color-ink-950);
+  --ui-bg-muted:      var(--color-ink-975);
+  --ui-bg-elevated:   var(--color-ink-900);
+  --ui-bg-accented:   var(--color-ink-925);
+  --ui-bg-inverted:   var(--color-ink-50);
+
+  --ui-text-dimmed:      var(--color-ink-500);
+  --ui-text-muted:       var(--color-ink-400);
+  --ui-text-toned:       var(--color-ink-300);
+  --ui-text:             var(--color-ink-100);
+  --ui-text-highlighted: var(--color-ink-50);
+  --ui-text-inverted:    #1a120d;   /* text on primary */
+
+  --ui-border:          var(--color-ink-800);
+  --ui-border-muted:    var(--color-ink-800);
+  --ui-border-accented: var(--color-ink-700);
+  --ui-border-inverted: var(--color-ink-50);
+}
+
+/* Light fallback (not the default) */
+:root:not(.dark) {
+  --ui-bg: #faf8f3;
+  --ui-bg-muted: #f2efe8;
+  --ui-bg-elevated: #ffffff;
+  --ui-bg-accented: #ebe7de;
+  --ui-text: #2a2721;
+  --ui-text-highlighted: #141311;
+  --ui-text-muted: #6f6a60;
+  --ui-text-dimmed: #9b968b;
+  --ui-border: #e2ddd2;
+  --ui-border-accented: #cfc9bc;
+}
+
+/* Reading typography — apply .prose-note to the rendered note body */
+@utility prose-note {
+  font-family: var(--font-serif);
+  font-size: 1.125rem;      /* 18px mobile */
+  line-height: 1.65;
+  color: var(--ui-text);
+  text-wrap: pretty;
+  & > p + p { margin-top: 1.125rem; }
+  @media (min-width: 1024px) { font-size: 1.1875rem; line-height: 1.7; & > p + p { margin-top: 1.25rem; } }
+}
+@utility heading-date {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 1.875rem; line-height: 1.2; letter-spacing: -0.01em;
+  color: var(--ui-text-highlighted);
+  @media (min-width: 1024px) { font-size: 2.5rem; line-height: 1.15; letter-spacing: -0.015em; }
+}
+@utility label-caps {
+  font-family: var(--font-sans);
+  font-weight: 500; font-size: 0.8125rem; line-height: 1;
+  letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--ui-text-muted);
+}
+/* Verse callout: full-bleed band on mobile, rounded block on desktop */
+@utility verse-callout {
+  background: var(--ui-bg-elevated);
+  margin-inline: -1.5rem; padding: 1.375rem 1.5rem;
+  display: flex; flex-direction: column; gap: 0.625rem;
+  @media (min-width: 1024px) { margin-inline: -2rem; padding: 1.625rem 2rem; border-radius: 10px; gap: 0.75rem; }
+  & .ref { font-family: var(--font-sans); font-weight: 500; font-size: 0.75rem; line-height: 1; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-ember-500); }
+  & .text { font-family: var(--font-serif); font-style: italic; font-size: 1.1875rem; line-height: 1.6; color: var(--ui-text-highlighted); }
+  @media (min-width: 1024px) { & .text { font-size: 1.3125rem; } }
+}
+/* Inline [Book C:V] token highlight while editing */
+@utility verse-token {
+  background: #2b2219; color: var(--color-ember-400);
+  border-radius: 4px; padding: 1px 6px;
+}

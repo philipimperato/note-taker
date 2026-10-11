@@ -1,0 +1,419 @@
+# Drizzle + Nuxt setup (Neon Postgres + Neon Auth)
+
+Implements [data-model.md](./data-model.md) with Drizzle ORM inside Nuxt's Nitro server, on Neon Postgres. Authentication is Neon Auth, as described in [auth-with-neon.md](./auth-with-neon.md); this doc only covers the pieces where Drizzle and auth meet.
+
+## 1. Install
+
+```bash
+pnpm add drizzle-orm @neondatabase/serverless @neondatabase/auth
+```
+
+```bash
+pnpm add -D drizzle-kit
+```
+
+## 2. Environment
+
+```ini
+DATABASE_URL=postgresql://...            # from Neon Console → Connection details
+NEON_AUTH_BASE_URL=https://ep-xxx.neonauth.<region>.aws.neon.build/neondb/auth
+```
+
+Neon Auth is configured per branch. Enable it on the branch before running migrations, because `note.user_id` has a foreign key to `neon_auth.user`.
+
+## 3. Files to create
+
+```
+server/
+  db/
+    schema.ts              # app tables + reference to neon_auth.user
+    index.ts               # db client (Nitro-side only)
+  utils/
+    auth.ts                # createNeonAuth + requireUser helper
+    notes.ts               # queries used by the API routes
+    verses.ts              # token parsing + verse lookup
+  middleware/
+    session.ts             # puts the Neon Auth user on event.context
+  api/
+    auth/[...all].ts       # proxy to Neon Auth
+    notes/[date].get.ts
+    notes/[date].draft.put.ts
+    notes/[date].put.ts
+    notes/index.get.ts
+    notes/month/[ym].get.ts
+    streak.get.ts
+app/utils/auth-client.ts
+drizzle/                   # generated migrations (commit these)
+drizzle.config.ts
+```
+
+## 4. drizzle.config.ts
+
+```ts
+import { defineConfig } from 'drizzle-kit'
+
+export default defineConfig({
+  dialect: 'postgresql',
+  schema: './server/db/schema.ts',
+  out: './drizzle',
+  dbCredentials: { url: process.env.DATABASE_URL! },
+  schemaFilter: ['public'],   // never let drizzle-kit touch the neon_auth schema
+})
+```
+
+## 5. server/db/schema.ts
+
+```ts
+import { pgSchema, pgTable, text, integer, date, timestamp, uuid, uniqueIndex } from 'drizzle-orm/pg-core'
+
+// Owned and migrated by Neon Auth. Declared here only so Drizzle can build the FK and joins.
+// Keep it minimal; Neon Auth manages the real columns.
+export const neonAuth = pgSchema('neon_auth')
+export const authUsers = neonAuth.table('user', {
+  id: text('id').primaryKey(),
+  email: text('email').notNull(),
+  name: text('name'),
+})
+
+export const notes = pgTable(
+  'note',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => authUsers.id, { onDelete: 'cascade' }),
+    noteDate: date('note_date', { mode: 'string' }).notNull(),   // 'YYYY-MM-DD', local calendar day
+    body: text('body'),                                          // saved raw text incl. [Book C:V] tokens; NULL = never saved
+    draftBody: text('draft_body'),                               // autosave; NULL = no pending draft
+    savedAt: timestamp('saved_at', { withTimezone: true }),      // last Save
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('note_user_date_uq').on(t.userId, t.noteDate)],
+)
+
+export const verses = pgTable('verse', {
+  reference: text('reference').primaryKey(),   // normalized, e.g. 'john/3/16', 'psalm/23/1-3'
+  book: text('book').notNull(),
+  chapter: integer('chapter').notNull(),
+  verseStart: integer('verse_start').notNull(),
+  verseEnd: integer('verse_end').notNull(),
+  text: text('text').notNull(),
+  translation: text('translation').notNull().default('KJV'),
+  fetchedAt: timestamp('fetched_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
+export type Note = typeof notes.$inferSelect
+export type Verse = typeof verses.$inferSelect
+```
+
+Because `schemaFilter` excludes `neon_auth`, drizzle-kit will not try to create or alter the `user` table. It still emits the foreign key in the `note` migration. Verify the column name and type of `neon_auth.user.id` in the Neon Console before the first migration; Better Auth uses `text` ids.
+
+## 6. server/db/index.ts
+
+```ts
+import { drizzle } from 'drizzle-orm/neon-http'
+import { neon } from '@neondatabase/serverless'
+import * as schema from './schema'
+
+const sql = neon(process.env.DATABASE_URL!)
+export const db = drizzle(sql, { schema })
+```
+
+`neon-http` is the right driver for serverless and edge deploys. If you run a long-lived Node server and want transactions, switch to `drizzle-orm/neon-serverless` with `Pool`. Only import `db` from `server/` code.
+
+## 7. Migrations
+
+```bash
+pnpm drizzle-kit generate
+```
+
+```bash
+pnpm drizzle-kit migrate
+```
+
+`package.json` scripts:
+
+```json
+"scripts": {
+  "db:generate": "drizzle-kit generate",
+  "db:migrate": "drizzle-kit migrate",
+  "db:studio": "drizzle-kit studio"
+}
+```
+
+Run `db:migrate` against each Neon branch (dev, preview, prod) after Neon Auth is enabled on that branch. Avoid `drizzle-kit push` here; it can be aggressive with schemas it does not own.
+
+## 8. Auth glue
+
+Copied from [auth-with-neon.md](./auth-with-neon.md), plus a `requireUser` helper the note routes use.
+
+```ts
+// server/utils/auth.ts
+import { createNeonAuth } from '@neondatabase/auth/server'
+import type { H3Event } from 'h3'
+
+export const auth = createNeonAuth({ baseUrl: process.env.NEON_AUTH_BASE_URL! })
+
+export function requireUser(event: H3Event) {
+  const user = event.context.user
+  if (!user) throw createError({ statusCode: 401 })
+  return user
+}
+```
+
+```ts
+// server/middleware/session.ts
+export default defineEventHandler(async (event) => {
+  const session = await auth.getSession(toWebRequest(event))
+  event.context.user = session?.user ?? null
+})
+```
+
+```ts
+// server/api/auth/[...all].ts
+export default defineEventHandler((event) => auth.handler(toWebRequest(event)))
+```
+
+```ts
+// app/utils/auth-client.ts
+import { createAuthClient } from '@neondatabase/auth/client'
+export const authClient = createAuthClient({ baseURL: '/api/auth' })
+```
+
+Add the `user` type to the event context so `requireUser` is typed:
+
+```ts
+// server/types.d.ts
+declare module 'h3' {
+  interface H3EventContext {
+    user: { id: string; email: string; name?: string | null } | null
+  }
+}
+export {}
+```
+
+Sign-in, sign-up, OTP verification, and password reset are all in the auth doc and need no Drizzle code.
+
+## 9. Queries (server/utils/notes.ts)
+
+Nitro auto-imports anything exported from `server/utils/`.
+
+```ts
+import { and, eq, isNotNull, ne, lte, desc, between } from 'drizzle-orm'
+import { db } from '../db'
+import { notes } from '../db/schema'
+
+const hasSavedBody = and(isNotNull(notes.body), ne(notes.body, ''))
+
+export function getNote(userId: string, date: string) {
+  return db.query.notes.findFirst({
+    where: and(eq(notes.userId, userId), eq(notes.noteDate, date)),
+  })
+}
+
+export async function saveDraft(userId: string, date: string, draft: string) {
+  const now = new Date()
+  await db
+    .insert(notes)
+    .values({ userId, noteDate: date, draftBody: draft, updatedAt: now })
+    .onConflictDoUpdate({
+      target: [notes.userId, notes.noteDate],
+      set: { draftBody: draft, updatedAt: now },
+    })
+}
+
+export async function publishNote(userId: string, date: string, body: string) {
+  const now = new Date()
+  await db
+    .insert(notes)
+    .values({ userId, noteDate: date, body, savedAt: now, updatedAt: now })
+    .onConflictDoUpdate({
+      target: [notes.userId, notes.noteDate],
+      set: { body, draftBody: null, savedAt: now, updatedAt: now },
+    })
+}
+
+// Notes list: every saved day, newest first. Preview is derived in the handler.
+export function listSavedNotes(userId: string) {
+  return db
+    .select({ noteDate: notes.noteDate, body: notes.body })
+    .from(notes)
+    .where(and(eq(notes.userId, userId), hasSavedBody))
+    .orderBy(desc(notes.noteDate))
+}
+
+// Calendar: which days in a month have a saved note. ym is 'YYYY-MM'.
+export async function savedDatesInMonth(userId: string, ym: string) {
+  const rows = await db
+    .select({ noteDate: notes.noteDate })
+    .from(notes)
+    .where(and(eq(notes.userId, userId), hasSavedBody, between(notes.noteDate, `${ym}-01`, `${ym}-31`)))
+  return rows.map((r) => r.noteDate)
+}
+
+// Streak: consecutive saved days ending today, or ending yesterday if today is still empty.
+export async function streak(userId: string, today: string) {
+  const rows = await db
+    .select({ noteDate: notes.noteDate })
+    .from(notes)
+    .where(and(eq(notes.userId, userId), hasSavedBody, lte(notes.noteDate, today)))
+    .orderBy(desc(notes.noteDate))
+
+  const dates = new Set(rows.map((r) => r.noteDate))
+  const cursor = new Date(`${today}T00:00:00Z`)
+  if (!dates.has(today)) cursor.setUTCDate(cursor.getUTCDate() - 1)
+  let count = 0
+  while (dates.has(cursor.toISOString().slice(0, 10))) {
+    count++
+    cursor.setUTCDate(cursor.getUTCDate() - 1)
+  }
+  return count // 0 means the UI shows "Start a new streak"
+}
+
+export const wordCount = (s: string) => (s.trim().match(/\S+/g) ?? []).length
+```
+
+## 10. Verses (server/utils/verses.ts)
+
+```ts
+import { inArray } from 'drizzle-orm'
+import { db } from '../db'
+import { verses } from '../db/schema'
+
+// Matches [John 3:16], [1 John 3:16], [Song of Songs 2:1], [Psalm 23:1-3]
+const TOKEN = /\[([1-3]?\s?[A-Za-z]+(?:\s[A-Za-z]+)*)\s+(\d+):(\d+)(?:-(\d+))?\]/g
+
+export type Token = {
+  raw: string
+  book: string
+  chapter: number
+  verseStart: number
+  verseEnd: number
+}
+
+export function parseTokens(body: string): Token[] {
+  return [...body.matchAll(TOKEN)].map((m) => ({
+    raw: m[0],
+    book: m[1].trim(),
+    chapter: Number(m[2]),
+    verseStart: Number(m[3]),
+    verseEnd: Number(m[4] ?? m[3]),
+  }))
+}
+
+export function normalizeRef(t: Token) {
+  const book = t.book.toLowerCase().replace(/\s+/g, '')
+  const range = t.verseEnd === t.verseStart ? `${t.verseStart}` : `${t.verseStart}-${t.verseEnd}`
+  return `${book}/${t.chapter}/${range}`
+}
+
+// Implement against the chosen scripture API. Return null when the reference does not exist.
+async function lookupVerse(_t: Token): Promise<{ book: string; chapter: number; verseStart: number; verseEnd: number; text: string } | null> {
+  throw new Error('lookupVerse not implemented')
+}
+
+// Called on Save. Resolves uncached references and stores the hits.
+export async function cacheVerses(body: string) {
+  const tokens = parseTokens(body)
+  if (!tokens.length) return
+  const refs = [...new Set(tokens.map(normalizeRef))]
+  const cached = await db.select({ reference: verses.reference }).from(verses).where(inArray(verses.reference, refs))
+  const have = new Set(cached.map((c) => c.reference))
+
+  for (const t of tokens) {
+    const ref = normalizeRef(t)
+    if (have.has(ref)) continue
+    const result = await lookupVerse(t)
+    if (!result) continue
+    await db.insert(verses).values({ reference: ref, ...result }).onConflictDoNothing()
+    have.add(ref)
+  }
+}
+
+// Called at render time. The client expands tokens into callouts from this map.
+export async function versesFor(body: string) {
+  const refs = [...new Set(parseTokens(body).map(normalizeRef))]
+  if (!refs.length) return {}
+  const rows = await db.select().from(verses).where(inArray(verses.reference, refs))
+  return Object.fromEntries(rows.map((v) => [v.reference, v]))
+}
+```
+
+`lookupVerse` is the one piece left open. A token whose normalized key is missing from the `versesFor` map is what the client renders as the muted "Couldn't find …" hint.
+
+## 11. API routes
+
+Every note route starts with `requireUser(event)`. The session middleware has already populated `event.context.user` from the Neon Auth cookie.
+
+```ts
+// server/api/notes/[date].get.ts
+export default defineEventHandler(async (event) => {
+  const user = requireUser(event)
+  const date = getRouterParam(event, 'date')!
+  const note = await getNote(user.id, date)
+  return { note: note ?? null, verses: note?.body ? await versesFor(note.body) : {} }
+})
+```
+
+```ts
+// server/api/notes/[date].put.ts  (Save)
+export default defineEventHandler(async (event) => {
+  const user = requireUser(event)
+  const date = getRouterParam(event, 'date')!
+  const { body, today } = await readBody<{ body: string; today: string }>(event)
+  if (wordCount(body) > 1000) throw createError({ statusCode: 422, statusMessage: 'Over 1000 words' })
+  if (date > today) throw createError({ statusCode: 422, statusMessage: 'Future date' })
+  await cacheVerses(body)
+  await publishNote(user.id, date, body)
+  return { ok: true }
+})
+```
+
+```ts
+// server/api/notes/[date].draft.put.ts  (autosave)
+export default defineEventHandler(async (event) => {
+  const user = requireUser(event)
+  const date = getRouterParam(event, 'date')!
+  const { body } = await readBody<{ body: string }>(event)
+  await saveDraft(user.id, date, body)
+  return { ok: true }
+})
+```
+
+```ts
+// server/api/notes/index.get.ts  (list)
+export default defineEventHandler(async (event) => {
+  const user = requireUser(event)
+  const rows = await listSavedNotes(user.id)
+  return rows.map((r) => ({ date: r.noteDate, preview: r.body!.split('\n').find(Boolean) ?? '' }))
+})
+```
+
+```ts
+// server/api/notes/month/[ym].get.ts  (calendar)
+export default defineEventHandler((event) =>
+  savedDatesInMonth(requireUser(event).id, getRouterParam(event, 'ym')!),
+)
+```
+
+```ts
+// server/api/streak.get.ts
+export default defineEventHandler((event) => {
+  const today = getQuery(event).today as string
+  return streak(requireUser(event).id, today)
+})
+```
+
+The client always sends its local `YYYY-MM-DD` as `today`. The server never computes the current date itself, so the calendar day matches what the user sees.
+
+## 12. Client notes
+
+- Gate the app pages with a route middleware that checks `authClient.useSession()` and redirects to the sign-in page when there is no session. The sign-in, sign-up, and OTP screens are not in `screens/` yet.
+- Today view: `useFetch('/api/notes/' + today)` then render `note.body`, replacing each token with a callout from `verses[normalizeRef(token)]`. Move `parseTokens` and `normalizeRef` into `shared/` if you want to reuse them client-side.
+- Today edit: open with `note.draftBody ?? note.body ?? ''`. Autosave with `$fetch(..., { method: 'PUT' })` to the draft route every 30s while dirty.
+- List | Calendar choice: `localStorage`, not the API.
+
+## 13. Verify before copying
+
+The Neon Auth SDK is in beta. Confirm the export names in [auth-with-neon.md](./auth-with-neon.md) (`createNeonAuth`, `createAuthClient`, `getSession`, `handler`) against the package README before building. Also confirm the exact column name and type of the user id in the `neon_auth` schema, since the foreign key in `schema.ts` depends on it.
