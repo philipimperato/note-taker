@@ -1,4 +1,7 @@
 <script setup lang="ts">
+// Remount when the date changes so DayScreen refetches and resets its mode.
+definePageMeta({ key: (route) => route.fullPath })
+
 const route = useRoute()
 const date = String(route.params.date)
 

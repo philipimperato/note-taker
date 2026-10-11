@@ -5,6 +5,9 @@ const props = defineProps<{ date: string }>()
 
 const today = todayLocal()
 const isToday = computed(() => props.date === today)
+const route = useRoute()
+const { open: menuOpen, refreshNotes } = useNotesMenu()
+const sidebar = useState('notes-sidebar', () => false) // desktop: collapsed by default, hamburger toggles
 
 type DayPayload = { note: Note | null; verses: Record<string, Verse> }
 const { data, refresh } = await useFetch<DayPayload>(() => `/api/notes/${props.date}`, {
@@ -35,6 +38,20 @@ function startEdit() {
   mode.value = 'edit'
 }
 
+// Calendar opens past empty days straight into edit (?edit=1).
+if (route.query.edit === '1' && !hasNote.value) startEdit()
+
+function toggleMenu() {
+  if (window.matchMedia('(min-width: 1024px)').matches) sidebar.value = !sidebar.value
+  else menuOpen.value = true
+}
+
+async function openDay(date: string, hasNote: boolean) {
+  menuOpen.value = false
+  if (date === today) return navigateTo('/')
+  return navigateTo({ path: `/day/${date}`, query: hasNote ? {} : { edit: '1' } })
+}
+
 async function autosave() {
   if (mode.value !== 'edit' || !dirty.value) return
   try {
@@ -52,7 +69,7 @@ async function save() {
   saveError.value = null
   try {
     await $fetch(`/api/notes/${props.date}`, { method: 'PUT', body: { body: draft.value, today } })
-    await Promise.all([refresh(), refreshStreak()])
+    await Promise.all([refresh(), refreshStreak(), refreshNotes()])
     mode.value = 'view'
   } catch (e) {
     saveError.value = (e as { data?: { statusMessage?: string } }).data?.statusMessage ?? 'Could not save'
@@ -69,11 +86,24 @@ const streakLine = computed(() => {
 </script>
 
 <template>
-  <div class="flex min-h-dvh flex-col">
+  <div class="flex min-h-dvh">
+    <!-- Desktop sidebar (toggled by the hamburger) -->
+    <div v-if="sidebar" class="sticky top-0 hidden h-dvh lg:block">
+      <NotesMenu :selected="date" compact @select="openDay" />
+    </div>
+
+    <!-- Mobile full-screen sheet -->
+    <Slideover v-model:open="menuOpen" side="left" :close="false" :ui="{ content: 'w-screen max-w-none' }">
+      <template #content>
+        <NotesMenu :selected="date" @select="openDay" @close="menuOpen = false" />
+      </template>
+    </Slideover>
+
+  <div class="flex min-h-dvh min-w-0 flex-1 flex-col">
     <!-- Top bar -->
     <header class="sticky top-0 z-10 flex h-[66px] items-center justify-between bg-default px-4 pt-3 lg:static lg:px-7 lg:pt-5">
       <div class="flex items-center gap-3.5">
-        <Button color="neutral" variant="ghost" icon="i-lucide-menu" aria-label="Notes" class="size-11 lg:size-9" />
+        <Button color="neutral" variant="ghost" icon="i-lucide-menu" aria-label="Notes" class="size-11 lg:size-9" @click="toggleMenu" />
         <span v-if="mode === 'view'" class="label-caps hidden lg:inline">{{ isToday ? 'Today' : shortDate(date) }}</span>
       </div>
 
@@ -131,5 +161,6 @@ const streakLine = computed(() => {
         </div>
       </div>
     </main>
+  </div>
   </div>
 </template>
