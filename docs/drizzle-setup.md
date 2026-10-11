@@ -14,7 +14,7 @@ pnpm add -D drizzle-kit
 
 ## 2. Environment
 
-`neon link` writes `.env.local` with `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `NEON_BRANCH`, `NEON_AUTH_BASE_URL`, and `NEON_AUTH_JWKS_URL`. It is git-ignored. The `dev` script loads it with `--dotenv .env.local`, and `drizzle.config.ts` loads it with `process.loadEnvFile` so the `db:*` scripts see the same values. Re-run `neon deploy` to refresh it.
+`neon link` writes `.env.local` with `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `NEON_BRANCH`, `NEON_AUTH_BASE_URL`, and `NEON_AUTH_JWKS_URL`. Add `NEON_AUTH_COOKIE_SECRET` yourself (see `.env.example`). It is git-ignored. The `dev` script loads it with `--dotenv .env.local`, and `drizzle.config.ts` loads it with `process.loadEnvFile` so the `db:*` scripts see the same values. Re-run `neon deploy` to refresh it.
 
 Neon Auth is configured per branch (`auth: true` in `neon.ts`). Enable it on the branch before running migrations, because `note.user_id` has a foreign key to `neon_auth.user`.
 
@@ -27,16 +27,16 @@ server/
     schema.ts              # app tables
     index.ts               # db client (Nitro-side only)
   utils/
-    auth.ts                # createNeonAuth + requireUser helper
+    auth.ts                # createAuthServer (H3 context) + requireUser helper
     notes.ts               # queries used by the API routes
     verses.ts              # token parsing + verse lookup
   middleware/
     session.ts             # puts the Neon Auth user on event.context
   api/
     auth/[...all].ts       # proxy to Neon Auth
-    notes/[date].get.ts
-    notes/[date].draft.put.ts
-    notes/[date].put.ts
+    notes/[date]/index.get.ts
+    notes/[date]/index.put.ts
+    notes/[date]/draft.put.ts
     notes/index.get.ts
     notes/month/[ym].get.ts
     streak.get.ts
@@ -161,54 +161,84 @@ Run `db:migrate` against each Neon branch (dev, preview, prod) after Neon Auth i
 
 ## 8. Auth glue
 
-Copied from [auth-with-neon.md](./auth-with-neon.md), plus a `requireUser` helper the note routes use.
+The SDK's `createNeonAuth` is Next.js-only (`@neondatabase/auth/next/server`). For Nuxt we use the framework-agnostic toolkit from `@neondatabase/auth/server`: `handleAuthProxyRequest` for the proxy route and `createAuthServer` with an H3-backed `RequestContext` for sessions. Both need `NEON_AUTH_COOKIE_SECRET` (32+ chars, app-generated, in `.env.local`) to sign the cached session cookie.
 
 ```ts
 // server/utils/auth.ts
-import { createNeonAuth } from '@neondatabase/auth/server'
+import { createAuthServer, extractNeonAuthCookies, type RequestContext } from '@neondatabase/auth/server'
 import type { H3Event } from 'h3'
 
-export const auth = createNeonAuth({ baseUrl: process.env.NEON_AUTH_BASE_URL! })
+export function authConfig() {
+  const baseUrl = process.env.NEON_AUTH_BASE_URL
+  const cookieSecret = process.env.NEON_AUTH_COOKIE_SECRET
+  if (!baseUrl) throw new Error('NEON_AUTH_BASE_URL is not set')
+  if (!cookieSecret || cookieSecret.length < 32) throw new Error('NEON_AUTH_COOKIE_SECRET must be at least 32 characters')
+  return { baseUrl, cookieSecret }
+}
+
+function h3RequestContext(event: H3Event): RequestContext {
+  return {
+    getCookies: () => extractNeonAuthCookies(getHeader(event, 'cookie') ?? ''),
+    setCookie: (name, value, options) => setCookie(event, name, value, options),
+    getHeader: (name) => getHeader(event, name) ?? null,
+    getOrigin: () => getHeader(event, 'origin') ?? getRequestURL(event).origin,
+    getFramework: () => 'nuxt',
+  }
+}
+
+export function authServer(event: H3Event) {
+  const { baseUrl, cookieSecret } = authConfig()
+  return createAuthServer({ baseUrl, cookieSecret, context: () => h3RequestContext(event) })
+}
+
+export async function getSessionUser(event: H3Event) {
+  const { data } = await authServer(event).getSession()
+  return data?.user ?? null
+}
 
 export function requireUser(event: H3Event) {
   const user = event.context.user
-  if (!user) throw createError({ statusCode: 401 })
+  if (!user) throw createError({ statusCode: 401, statusMessage: 'Unauthorized' })
   return user
 }
 ```
 
 ```ts
-// server/middleware/session.ts
+// server/middleware/session.ts  — only runs for /api/*, skips /api/auth
 export default defineEventHandler(async (event) => {
-  const session = await auth.getSession(toWebRequest(event))
-  event.context.user = session?.user ?? null
+  const path = getRequestURL(event).pathname
+  if (!path.startsWith('/api/') || path.startsWith('/api/auth')) return
+  event.context.user = await getSessionUser(event)
 })
 ```
 
 ```ts
-// server/api/auth/[...all].ts
-export default defineEventHandler((event) => auth.handler(toWebRequest(event)))
+// server/api/auth/[...].ts  — first-party proxy to Neon Auth
+import { handleAuthProxyRequest } from '@neondatabase/auth/server'
+
+export default defineEventHandler((event) => {
+  const { baseUrl, cookieSecret } = authConfig()
+  const path = getRequestURL(event).pathname.replace(/^\/api\/auth\/?/, '')
+  return handleAuthProxyRequest({ request: toWebRequest(event), path, baseUrl, cookieSecret, sameSite: 'lax' })
+})
 ```
 
 ```ts
 // app/utils/auth-client.ts
-import { createAuthClient } from '@neondatabase/auth/client'
-export const authClient = createAuthClient({ baseURL: '/api/auth' })
+import { createAuthClient } from '@neondatabase/auth'
+export const authClient = createAuthClient('/api/auth')
 ```
 
-Add the `user` type to the event context so `requireUser` is typed:
-
 ```ts
-// server/types.d.ts
+// server/types.d.ts  — types event.context.user
+import type { RequireSessionData } from '@neondatabase/auth/server'
 declare module 'h3' {
-  interface H3EventContext {
-    user: { id: string; email: string; name?: string | null } | null
-  }
+  interface H3EventContext { user: RequireSessionData['user'] | null }
 }
 export {}
 ```
 
-Sign-in, sign-up, OTP verification, and password reset are all in the auth doc and need no Drizzle code.
+Client calls (`signUp.email`, `signIn.email`, `getSession`, `signOut`, `emailOtp.*`) are in [auth-with-neon.md](./auth-with-neon.md) and need no Drizzle code. Verified: with no cookie, `GET /api/auth/get-session` proxies to Neon and returns `null`; note routes return 401.
 
 ## 9. Queries (server/utils/notes.ts)
 
@@ -362,7 +392,7 @@ export async function versesFor(body: string) {
 Every note route starts with `requireUser(event)`. The session middleware has already populated `event.context.user` from the Neon Auth cookie.
 
 ```ts
-// server/api/notes/[date].get.ts
+// server/api/notes/[date]/index.get.ts
 export default defineEventHandler(async (event) => {
   const user = requireUser(event)
   const date = getRouterParam(event, 'date')!
@@ -372,7 +402,7 @@ export default defineEventHandler(async (event) => {
 ```
 
 ```ts
-// server/api/notes/[date].put.ts  (Save)
+// server/api/notes/[date]/index.put.ts  (Save)
 export default defineEventHandler(async (event) => {
   const user = requireUser(event)
   const date = getRouterParam(event, 'date')!
@@ -386,7 +416,7 @@ export default defineEventHandler(async (event) => {
 ```
 
 ```ts
-// server/api/notes/[date].draft.put.ts  (autosave)
+// server/api/notes/[date]/draft.put.ts  (autosave)
 export default defineEventHandler(async (event) => {
   const user = requireUser(event)
   const date = getRouterParam(event, 'date')!
@@ -429,6 +459,6 @@ The client always sends its local `YYYY-MM-DD` as `today`. The server never comp
 - Today edit: open with `note.draftBody ?? note.body ?? ''`. Autosave with `$fetch(..., { method: 'PUT' })` to the draft route every 30s while dirty.
 - List | Calendar choice: `localStorage`, not the API.
 
-## 13. Verify before copying
+## 13. Status
 
-The Neon Auth SDK is in beta. Confirm the export names in [auth-with-neon.md](./auth-with-neon.md) (`createNeonAuth`, `createAuthClient`, `getSession`, `handler`) against the package README before building. The `neon_auth.user.id` column has been confirmed as `uuid` on the production branch.
+Everything in sections 5 through 11 is implemented and type-checks against `@neondatabase/auth@0.5.0-beta`. Still open: `lookupVerse` (returns `null` until a scripture API is chosen), the sign-in / sign-up / OTP pages, and a route middleware that redirects signed-out users.

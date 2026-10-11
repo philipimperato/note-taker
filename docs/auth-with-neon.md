@@ -41,50 +41,28 @@ DATABASE_URL=postgresql://...
 
 ## Server (Nitro)
 
-File paths below are for Nuxt (`server/...`). For standalone Nitro use `routes/api/auth/[...all].ts` and `middleware/session.ts` — same code.
+> **Implemented.** `createNeonAuth` only exists for Next.js (`@neondatabase/auth/next/server`). The Nuxt build uses the framework-agnostic toolkit instead; the real code is in `server/utils/auth.ts`, `server/middleware/session.ts`, and `server/api/auth/[...].ts`, and is reproduced in [drizzle-setup.md](./drizzle-setup.md#8-auth-glue). Summary:
 
-```ts
-// server/utils/auth.ts
-import { createNeonAuth } from '@neondatabase/auth/server'
-
-export const auth = createNeonAuth({
-  baseUrl: process.env.NEON_AUTH_BASE_URL!,
-})
-```
-
-```ts
-// server/api/auth/[...all].ts
-export default defineEventHandler((event) => auth.handler(toWebRequest(event)))
-```
-
-```ts
-// server/middleware/session.ts
-export default defineEventHandler(async (event) => {
-  const session = await auth.getSession(toWebRequest(event))
-  event.context.user = session?.user ?? null
-})
-```
-
-`toWebRequest(event)` converts the H3 event to a standard `Request`; returning the handler's `Response` lets Nitro stream it back with Set-Cookie headers intact.
+- `createAuthServer({ baseUrl, cookieSecret, context })` from `@neondatabase/auth/server`, with a `RequestContext` that reads cookies/headers from the H3 event and writes cookies back with `setCookie`.
+- `handleAuthProxyRequest({ request: toWebRequest(event), path, baseUrl, cookieSecret })` in a catch-all `/api/auth/[...]` route.
+- `NEON_AUTH_COOKIE_SECRET` (32+ chars) is required by both; it is app-generated and lives in `.env.local`.
 
 ### Protecting routes
 
 ```ts
-// server/api/accounts.get.ts
+// any server/api/*.ts
 export default defineEventHandler(async (event) => {
-  if (!event.context.user) throw createError({ statusCode: 401 })
-  return db.selectFrom('accounts')
-    .where('owner_id', '=', event.context.user.id)
-    .execute()
+  const user = requireUser(event)   // throws 401 when event.context.user is null
+  return db.select().from(notes).where(eq(notes.userId, user.id))
 })
 ```
 
 ## Client
 
 ```ts
-// app/utils/auth-client.ts
-import { createAuthClient } from '@neondatabase/auth/client'
-export const authClient = createAuthClient({ baseURL: '/api/auth' })
+// app/utils/auth-client.ts  (implemented)
+import { createAuthClient } from '@neondatabase/auth'
+export const authClient = createAuthClient('/api/auth')
 ```
 
 ```ts

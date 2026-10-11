@@ -60,6 +60,6 @@ export default defineAppConfig({
     badge: { defaultVariants: { color: 'primary', variant: 'soft' } },
     separator: { slots: { border: 'border-default' } },
     tooltip: { slots: { content: 'bg-elevated text-highlighted ring-default' } },
-    kbd: { slots: { base: 'bg-accented text-primary ring-0 font-mono' } },
+    kbd: { base: 'bg-accented text-primary ring-0 font-mono' },
   },
 })
