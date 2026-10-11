@@ -1,33 +1,7 @@
 import { inArray } from 'drizzle-orm'
+import { parseTokens, normalizeRef, type Token } from '#shared/utils/verses'
 import { db } from '../db'
 import { verses } from '../db/schema'
-
-// Matches [John 3:16], [1 John 3:16], [Song of Songs 2:1], [Psalm 23:1-3]
-const TOKEN = /\[([1-3]?\s?[A-Za-z]+(?:\s[A-Za-z]+)*)\s+(\d+):(\d+)(?:-(\d+))?\]/g
-
-export type Token = {
-  raw: string
-  book: string
-  chapter: number
-  verseStart: number
-  verseEnd: number
-}
-
-export function parseTokens(body: string): Token[] {
-  return [...body.matchAll(TOKEN)].map((m) => ({
-    raw: m[0],
-    book: m[1]!.trim(),
-    chapter: Number(m[2]),
-    verseStart: Number(m[3]),
-    verseEnd: Number(m[4] ?? m[3]),
-  }))
-}
-
-export function normalizeRef(t: Token) {
-  const book = t.book.toLowerCase().replace(/\s+/g, '')
-  const range = t.verseEnd === t.verseStart ? `${t.verseStart}` : `${t.verseStart}-${t.verseEnd}`
-  return `${book}/${t.chapter}/${range}`
-}
 
 type LookupResult = { book: string; chapter: number; verseStart: number; verseEnd: number; text: string }
 

@@ -19,6 +19,11 @@ export default defineNuxtConfig({
       meta: [{ name: 'viewport', content: 'width=device-width, initial-scale=1, viewport-fit=cover' }],
     },
   },
+  // Day screens depend on the client's local date, so render them on the client only.
+  routeRules: {
+    '/': { ssr: false },
+    '/day/**': { ssr: false },
+  },
   runtimeConfig: {
     databaseUrl: process.env.DATABASE_URL,
     neonAuthBaseUrl: process.env.NEON_AUTH_BASE_URL,

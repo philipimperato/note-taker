@@ -69,7 +69,6 @@ export async function streak(userId: string, today: string) {
   return count // 0 means the UI shows "Start a new streak"
 }
 
-export const wordCount = (s: string) => (s.trim().match(/\S+/g) ?? []).length
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 const ISO_MONTH = /^\d{4}-\d{2}$/
