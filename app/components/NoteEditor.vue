@@ -1,6 +1,7 @@
 <script setup lang="ts">
 const model = defineModel<string>({ required: true })
 const props = defineProps<{ autofocus?: boolean }>()
+const emit = defineEmits<{ save: [] }>()
 
 const textarea = useTemplateRef<HTMLTextAreaElement>('textarea')
 const mirror = useTemplateRef<HTMLDivElement>('mirror')
@@ -24,6 +25,14 @@ function resize() {
   if (!el) return
   el.style.height = '0px'
   el.style.height = `${Math.max(el.scrollHeight, 240)}px`
+}
+
+// Ctrl+Enter / Cmd+Enter saves.
+function onKeydown(e: KeyboardEvent) {
+  if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault()
+    emit('save')
+  }
 }
 
 function insertVerseBrackets() {
@@ -68,6 +77,7 @@ onMounted(() => {
         placeholder="Start writing…"
         spellcheck="true"
         @input="resize"
+        @keydown="onKeydown"
       />
     </div>
 
@@ -86,7 +96,7 @@ onMounted(() => {
     <!-- Desktop: hint line -->
     <p class="mt-6 hidden text-[13px] leading-relaxed text-dimmed lg:block">
       Verses: type a reference in brackets — [John 3:16] — and it fills in when you save.
-      Autosaves a draft every 30s; Save publishes the day.
+      Autosaves a draft every 30s; Save (or Ctrl+Enter) publishes the day.
     </p>
   </div>
 </template>

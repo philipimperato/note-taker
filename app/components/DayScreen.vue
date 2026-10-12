@@ -138,7 +138,7 @@ const streakLine = computed(() => {
 
       <!-- Edit -->
       <div v-if="mode === 'edit'" class="mt-6 flex flex-1 flex-col">
-        <NoteEditor v-model="draft" autofocus />
+        <NoteEditor v-model="draft" autofocus @save="save" />
       </div>
 
       <!-- View -->
