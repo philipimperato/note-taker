@@ -162,6 +162,7 @@ const streakLine = computed(() => {
         </div>
       </div>
     </main>
+    <AppFooter />
   </div>
   </div>
 </template>

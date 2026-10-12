@@ -8,7 +8,8 @@ defineProps<{
 </script>
 
 <template>
-  <div class="mx-auto w-full max-w-[400px] px-6 pt-16 lg:pt-24">
+  <div class="flex min-h-dvh flex-col">
+  <div class="mx-auto w-full max-w-[400px] flex-1 px-6 pt-16 lg:pt-24">
     <AppLogo :size="40" class="mb-8" />
     <span class="label-caps text-muted">{{ label }}</span>
     <h1 class="heading-date mt-2">{{ title }}</h1>
@@ -29,5 +30,7 @@ defineProps<{
     <p v-if="$slots.footer" class="mt-8 text-sm text-muted">
       <slot name="footer" />
     </p>
+  </div>
+  <AppFooter />
   </div>
 </template>

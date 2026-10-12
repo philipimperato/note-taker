@@ -2,6 +2,7 @@ import { DEFAULT_AUTH_SKIP_ROUTES, processAuthMiddleware } from '@neondatabase/a
 
 const SKIP_ROUTES = [...DEFAULT_AUTH_SKIP_ROUTES, '/auth']
 const LOGIN_URL = '/auth/sign-in'
+const VERIFIER_PARAM = 'neon_auth_session_verifier'
 
 const isAsset = (path: string) =>
   path.startsWith('/_nuxt') || path.startsWith('/__nuxt') || path.startsWith('/_fonts') || /\.[a-z0-9]+$/i.test(path)
@@ -32,6 +33,8 @@ export default defineEventHandler(async (event) => {
   for (const c of result.cookies ?? []) appendResponseHeader(event, 'set-cookie', c)
 
   if (result.action === 'redirect_oauth' || result.action === 'redirect_login') {
-    return sendRedirect(event, result.redirectUrl.toString(), 302)
+    const url = new URL(result.redirectUrl)
+    url.searchParams.delete(VERIFIER_PARAM) // one-shot token; never leave it in the address bar
+    return sendRedirect(event, url.toString(), 302)
   }
 })
