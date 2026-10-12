@@ -17,4 +17,4 @@ pnpm dev
 - [Data model](docs/data-model.md)
 - [Drizzle + Nuxt setup](docs/drizzle-setup.md)
 - [Auth with Neon](docs/auth-with-neon.md)
-- [Nuxt UI theme](nuxt-ui-theme/README.md) (copied into `app/app.config.ts` and `app/assets/css/main.css`)
+- [Nuxt UI theme](screens/nuxt-ui-theme/README.md) (copied into `app/app.config.ts` and `app/assets/css/main.css`)
