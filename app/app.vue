@@ -15,7 +15,7 @@ async function signOut() {
         <NuxtPage />
       </main>
       <footer class="flex items-center justify-center gap-4 px-6 py-4">
-        <span class="label-caps text-dimmed">NoteTaker</span>
+        <span class="flex items-center gap-2"><AppLogo :size="14" class="opacity-60" /><span class="label-caps text-dimmed">NoteTaker</span></span>
         <button v-if="user" type="button" class="text-xs text-dimmed hover:text-muted" @click="signOut">Sign out</button>
       </footer>
     </div>
