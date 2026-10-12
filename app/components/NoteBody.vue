@@ -18,12 +18,13 @@ const pieces = computed<Piece[]>(() => {
   for (const para of props.body.split(/\n\s*\n/)) {
     let last = 0
     for (const m of para.matchAll(VERSE_TOKEN)) {
+      const [t] = parseTokens(m[0])
+      if (!t) continue // not a real book: leave it in the paragraph text
       const before = para.slice(last, m.index).trim()
       if (before) out.push({ kind: 'p', text: before })
-      const [t] = parseTokens(m[0])
-      const verse = props.verses[normalizeRef(t!)]
-      if (verse) out.push({ kind: 'verse', label: displayRef(t!), text: verse.text })
-      else out.push({ kind: 'missing', label: displayRef(t!), raw: m[0] })
+      const verse = props.verses[normalizeRef(t)]
+      if (verse) out.push({ kind: 'verse', label: displayRef(t), text: verse.text })
+      else out.push({ kind: 'missing', label: displayRef(t), raw: m[0] })
       last = m.index! + m[0].length
     }
     const rest = para.slice(last).trim()

@@ -12,6 +12,7 @@ const segments = computed(() => {
   const out: { text: string; token: boolean }[] = []
   let last = 0
   for (const m of model.value.matchAll(VERSE_TOKEN)) {
+    if (!isVerseToken(m[0])) continue
     if (m.index! > last) out.push({ text: model.value.slice(last, m.index), token: false })
     out.push({ text: m[0], token: true })
     last = m.index! + m[0].length

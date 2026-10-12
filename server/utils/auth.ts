@@ -15,7 +15,7 @@ function h3RequestContext(event: H3Event): RequestContext {
     getCookies: () => extractNeonAuthCookies(getHeader(event, 'cookie') ?? ''),
     setCookie: (name, value, options) => setCookie(event, name, value, options),
     getHeader: (name) => getHeader(event, name) ?? null,
-    getOrigin: () => getHeader(event, 'origin') ?? getRequestURL(event).origin,
+    getOrigin: () => getRequestURL(event).origin, // our own origin, never the client-supplied header
     getFramework: () => 'nuxt',
   }
 }

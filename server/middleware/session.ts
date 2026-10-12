@@ -10,8 +10,17 @@ const isAsset = (path: string) =>
 export default defineEventHandler(async (event) => {
   const path = getRequestURL(event).pathname
 
-  // API: attach the user (routes call requireUser). The auth proxy handles itself.
+  // API: cookie-authenticated writes must come from our own origin (CSRF backstop behind SameSite).
   if (path.startsWith('/api/')) {
+    if (event.method !== 'GET' && event.method !== 'HEAD') {
+      const origin = getHeader(event, 'origin')
+      const site = getRequestURL(event).origin
+      const fetchSite = getHeader(event, 'sec-fetch-site')
+      if ((origin && origin !== site) || (!origin && fetchSite === 'cross-site')) {
+        throw createError({ statusCode: 403, statusMessage: 'Cross-origin request blocked' })
+      }
+    }
+    // Attach the user (routes call requireUser). The auth proxy handles itself.
     if (!path.startsWith('/api/auth')) event.context.user = await getSessionUser(event)
     return
   }

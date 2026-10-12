@@ -1,4 +1,4 @@
-import { and, eq, isNotNull, ne, lte, desc, between } from 'drizzle-orm'
+import { and, eq, isNotNull, ne, lte, desc, between, sql } from 'drizzle-orm'
 import { db } from '../db'
 import { notes } from '../db/schema'
 
@@ -35,7 +35,7 @@ export async function publishNote(userId: string, date: string, body: string) {
 /** Notes list: every saved day, newest first. Preview is derived in the handler. */
 export function listSavedNotes(userId: string) {
   return db
-    .select({ noteDate: notes.noteDate, body: notes.body })
+    .select({ noteDate: notes.noteDate, body: sql<string>`left(${notes.body}, 300)` })
     .from(notes)
     .where(and(eq(notes.userId, userId), hasSavedBody))
     .orderBy(desc(notes.noteDate))
@@ -74,14 +74,14 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/
 const ISO_MONTH = /^\d{4}-\d{2}$/
 
 export function requireDateParam(value: string | undefined, name = 'date') {
-  if (!value || !ISO_DATE.test(value)) {
+  if (!value || !ISO_DATE.test(value) || new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value) {
     throw createError({ statusCode: 400, statusMessage: `Invalid ${name}, expected YYYY-MM-DD` })
   }
   return value
 }
 
 export function requireMonthParam(value: string | undefined) {
-  if (!value || !ISO_MONTH.test(value)) {
+  if (!value || !ISO_MONTH.test(value) || Number(value.slice(5)) < 1 || Number(value.slice(5)) > 12) {
     throw createError({ statusCode: 400, statusMessage: 'Invalid month, expected YYYY-MM' })
   }
   return value
