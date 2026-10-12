@@ -33,6 +33,17 @@ export default defineNuxtConfig({
   $production: { nitro: { noExternals: true } },
   // Day screens depend on the client's local date, so render them on the client only.
   routeRules: {
+    // Security headers on every response, including the Nitro function (Netlify's own
+    // header config only covers static files).
+    '/**': {
+      headers: {
+        'Strict-Transport-Security': 'max-age=63072000; includeSubDomains',
+        'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'strict-origin-when-cross-origin',
+        'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
+        'Content-Security-Policy': "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'",
+      },
+    },
     '/': { ssr: false },
     '/day/**': { ssr: false },
   },
