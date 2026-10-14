@@ -21,12 +21,18 @@ const segments = computed(() => {
   return out
 })
 
+// Size the textarea to the mirror, which already has the same text and metrics.
+// Never collapse to 0 first: that briefly shortens the page and yanks the scroll position.
 function resize() {
   const el = textarea.value
-  if (!el) return
-  el.style.height = '0px'
-  el.style.height = `${Math.max(el.scrollHeight, 240)}px`
+  const m = mirror.value
+  if (!el || !m) return
+  const next = Math.max(m.scrollHeight, 240)
+  if (el.offsetHeight !== next) el.style.height = `${next}px`
 }
+
+// Mirror updates after the model; resize once it has re-rendered.
+watch(segments, () => nextTick(resize), { flush: 'post' })
 
 // Ctrl+Enter / Cmd+Enter saves.
 function onKeydown(e: KeyboardEvent) {
@@ -49,20 +55,26 @@ function insertVerseBrackets() {
   })
 }
 
-watch(model, () => nextTick(resize))
+// Re-measure when the column width changes (rotation, sidebar toggle, window resize).
+let ro: ResizeObserver | undefined
 onMounted(() => {
   resize()
   if (props.autofocus) textarea.value?.focus()
+  if (mirror.value && 'ResizeObserver' in window) {
+    ro = new ResizeObserver(() => resize())
+    ro.observe(mirror.value)
+  }
 })
+onBeforeUnmount(() => ro?.disconnect())
 </script>
 
 <template>
-  <div class="flex flex-col">
+  <div class="flex flex-col pb-24 lg:pb-32">
     <div class="relative">
       <div
         ref="mirror"
         aria-hidden="true"
-        class="prose-note pointer-events-none absolute inset-0 overflow-hidden whitespace-pre-wrap break-words"
+        class="prose-note pointer-events-none absolute inset-x-0 top-0 whitespace-pre-wrap break-words"
       >
         <template v-for="(s, i) in segments" :key="i">
           <span v-if="s.token" class="verse-token">{{ s.text }}</span>

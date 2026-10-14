@@ -161,7 +161,7 @@ const streakLine = computed(() => {
 
   <div class="flex min-h-dvh min-w-0 flex-1 flex-col">
     <!-- Top bar -->
-    <header class="sticky top-0 z-10 flex h-[66px] items-center justify-between bg-default px-4 pt-3 lg:static lg:px-7 lg:pt-5">
+    <header class="sticky top-0 z-10 flex h-[66px] items-center justify-between bg-default px-4 pt-3 lg:px-7 lg:pt-5">
       <div class="flex items-center gap-3.5">
         <Button color="neutral" variant="ghost" icon="i-lucide-menu" aria-label="Notes" square class="size-11 lg:size-9" @click="toggleMenu" />
         <NuxtLink to="/" aria-label="Home" class="flex"><AppLogo :size="24" /></NuxtLink>
