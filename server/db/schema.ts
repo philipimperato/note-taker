@@ -10,6 +10,7 @@ export const notes = pgTable(
     noteDate: date('note_date', { mode: 'string' }).notNull(), // 'YYYY-MM-DD', local calendar day
     body: text('body'),            // saved raw text incl. [Book C:V] tokens; NULL = never saved
     draftBody: text('draft_body'), // autosave; NULL = no pending draft
+    draftUpdatedAt: timestamp('draft_updated_at', { withTimezone: true }), // last real change to the draft
     savedAt: timestamp('saved_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

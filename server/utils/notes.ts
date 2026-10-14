@@ -4,21 +4,54 @@ import { notes } from '../db/schema'
 
 const hasSavedBody = and(isNotNull(notes.body), ne(notes.body, ''))
 
-export function getNote(userId: string, date: string) {
-  return db.query.notes.findFirst({
+/** A draft that has not changed for this long is dropped. */
+export const DRAFT_TTL_MS = 24 * 60 * 60 * 1000
+
+/** The day's row. A draft untouched for DRAFT_TTL_MS is dropped here (lazy expiry; no cron). */
+export async function getNote(userId: string, date: string) {
+  const note = await db.query.notes.findFirst({
     where: and(eq(notes.userId, userId), eq(notes.noteDate, date)),
   })
+  if (!note) return undefined
+  const stale = note.draftBody != null && (!note.draftUpdatedAt || note.draftUpdatedAt.getTime() < Date.now() - DRAFT_TTL_MS)
+  if (stale) {
+    await discardDraft(userId, date)
+    return { ...note, draftBody: null, draftUpdatedAt: null }
+  }
+  return note
 }
 
+/**
+ * Autosave. Only called when the text changed on the client. A draft identical to the saved
+ * body (or empty with nothing saved) is not a draft, so it is cleared instead of stored.
+ */
 export async function saveDraft(userId: string, date: string, draft: string) {
   const now = new Date()
+  const existing = await db.query.notes.findFirst({
+    columns: { body: true },
+    where: and(eq(notes.userId, userId), eq(notes.noteDate, date)),
+  })
+  const sameAsSaved = draft === (existing?.body ?? '')
+  if (sameAsSaved) {
+    if (existing) await discardDraft(userId, date)
+    return { draftUpdatedAt: null }
+  }
   await db
     .insert(notes)
-    .values({ userId, noteDate: date, draftBody: draft, updatedAt: now })
+    .values({ userId, noteDate: date, draftBody: draft, draftUpdatedAt: now, updatedAt: now })
     .onConflictDoUpdate({
       target: [notes.userId, notes.noteDate],
-      set: { draftBody: draft, updatedAt: now },
+      set: { draftBody: draft, draftUpdatedAt: now, updatedAt: now },
     })
+  return { draftUpdatedAt: now }
+}
+
+/** Discard: the only way a draft goes away besides Save and the 24h expiry. */
+export async function discardDraft(userId: string, date: string) {
+  await db
+    .update(notes)
+    .set({ draftBody: null, draftUpdatedAt: null, updatedAt: new Date() })
+    .where(and(eq(notes.userId, userId), eq(notes.noteDate, date)))
 }
 
 export async function publishNote(userId: string, date: string, body: string) {
@@ -28,7 +61,7 @@ export async function publishNote(userId: string, date: string, body: string) {
     .values({ userId, noteDate: date, body, savedAt: now, updatedAt: now })
     .onConflictDoUpdate({
       target: [notes.userId, notes.noteDate],
-      set: { body, draftBody: null, savedAt: now, updatedAt: now },
+      set: { body, draftBody: null, draftUpdatedAt: null, savedAt: now, updatedAt: now },
     })
 }
 

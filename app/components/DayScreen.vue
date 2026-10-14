@@ -21,20 +21,29 @@ const { data: streakData, refresh: refreshStreak } = await useFetch<{ days: numb
 })
 
 const note = computed(() => data.value.note)
-const hasNote = computed(() => !!note.value?.body?.trim())
+const savedBody = computed(() => note.value?.body ?? '')
+const hasNote = computed(() => !!savedBody.value.trim())
 const streak = computed(() => streakData.value.days)
 
 const mode = ref<'view' | 'edit'>('view')
 const draft = ref('')
+const lastSent = ref('') // what the server currently holds as the draft (or the saved body)
 const saving = ref(false)
 const saveError = ref<string | null>(null)
 
 const words = computed(() => wordCount(draft.value))
 const overLimit = computed(() => words.value > WORD_LIMIT)
-const dirty = computed(() => draft.value !== (note.value?.draftBody ?? note.value?.body ?? ''))
+
+/** A draft exists on the server that differs from the saved note (or the editor holds unsent changes). */
+const unsaved = computed(() => {
+  if (mode.value === 'edit') return draft.value !== savedBody.value
+  const d = note.value?.draftBody
+  return d != null && d !== savedBody.value
+})
 
 function startEdit() {
-  draft.value = note.value?.draftBody ?? note.value?.body ?? ''
+  draft.value = note.value?.draftBody ?? savedBody.value
+  lastSent.value = draft.value
   mode.value = 'edit'
 }
 
@@ -47,34 +56,85 @@ function toggleMenu() {
 }
 
 async function openDay(date: string, hasNote: boolean) {
+  await flush()
   menuOpen.value = false
   if (date === today) return navigateTo('/')
   return navigateTo({ path: `/day/${date}`, query: hasNote ? {} : { edit: '1' } })
 }
 
-async function autosave() {
-  if (mode.value !== 'edit' || !dirty.value) return
+// --- Draft autosave: every 5s, only when the text changed since the last send.
+const AUTOSAVE_MS = 5_000
+
+async function flush(keepalive = false) {
+  if (mode.value !== 'edit' || draft.value === lastSent.value) return
+  const body = draft.value
+  lastSent.value = body
   try {
-    await $fetch(`/api/notes/${props.date}/draft`, { method: 'PUT', body: { body: draft.value } })
+    const r = await $fetch<{ draftUpdatedAt: string | null }>(`/api/notes/${props.date}/draft`, {
+      method: 'PUT',
+      body: { body },
+      keepalive,
+    })
+    if (data.value.note) {
+      data.value.note.draftBody = r.draftUpdatedAt ? body : null
+      data.value.note.draftUpdatedAt = r.draftUpdatedAt ? new Date(r.draftUpdatedAt) : null
+    } else if (r.draftUpdatedAt) {
+      await refresh()
+    }
   } catch {
-    /* best effort; the next tick or Save will retry */
+    lastSent.value = '' // retry on the next tick
   }
 }
-const timer = setInterval(autosave, 30_000)
-onBeforeUnmount(() => clearInterval(timer))
 
+const timer = setInterval(() => flush(), AUTOSAVE_MS)
+const onHide = () => {
+  if (document.visibilityState === 'hidden') flush(true)
+}
+onMounted(() => {
+  document.addEventListener('visibilitychange', onHide)
+  window.addEventListener('pagehide', () => flush(true))
+})
+onBeforeUnmount(() => {
+  clearInterval(timer)
+  document.removeEventListener('visibilitychange', onHide)
+  flush(true)
+})
+
+// --- Save / cancel / discard
 async function save() {
   if (overLimit.value || !draft.value.trim()) return
   saving.value = true
   saveError.value = null
   try {
     await $fetch(`/api/notes/${props.date}`, { method: 'PUT', body: { body: draft.value, today } })
+    lastSent.value = draft.value
     await Promise.all([refresh(), refreshStreak(), refreshNotes()])
     mode.value = 'view'
   } catch (e) {
     saveError.value = (e as { data?: { statusMessage?: string } }).data?.statusMessage ?? 'Could not save'
   } finally {
     saving.value = false
+  }
+}
+
+/** Back to reading. The draft stays and shows as "Unsaved changes". */
+async function cancelEdit() {
+  await flush()
+  mode.value = 'view'
+}
+
+/** Drop the draft entirely. The only path that deletes one besides Save and the 24h expiry. */
+async function discard() {
+  if (!window.confirm('Discard your unsaved changes? The last saved note is kept.')) return
+  saveError.value = null
+  try {
+    await $fetch(`/api/notes/${props.date}/draft`, { method: 'DELETE' })
+    draft.value = savedBody.value
+    lastSent.value = draft.value
+    await refresh()
+    mode.value = 'view'
+  } catch {
+    saveError.value = 'Could not discard changes'
   }
 }
 
@@ -115,15 +175,19 @@ const streakLine = computed(() => {
         :class="overLimit ? 'text-primary' : 'text-muted'"
       >{{ words }} / {{ WORD_LIMIT }} words</span>
 
-      <div class="flex items-center gap-4">
+      <div class="flex items-center gap-3">
         <template v-if="mode === 'view'">
-          <span v-if="hasNote && note?.savedAt" class="hidden text-[13px] text-muted lg:inline">
+          <span v-if="unsaved" class="hidden text-[13px] text-primary lg:inline">Unsaved changes</span>
+          <span v-else-if="hasNote && note?.savedAt" class="hidden text-[13px] text-muted lg:inline">
             Saved {{ clockTime(String(note.savedAt)) }}
           </span>
-          <Button v-if="hasNote" variant="outline" @click="startEdit">Edit</Button>
+          <Button v-if="hasNote || unsaved" variant="outline" @click="startEdit">Edit</Button>
           <span v-else class="w-9" />
         </template>
-        <Button v-else :disabled="overLimit || !draft.trim()" :loading="saving" @click="save">Save</Button>
+        <template v-else>
+          <Button color="neutral" variant="ghost" @click="cancelEdit">Cancel</Button>
+          <Button :disabled="overLimit || !draft.trim()" :loading="saving" @click="save">Save</Button>
+        </template>
       </div>
     </header>
 
@@ -133,6 +197,7 @@ const streakLine = computed(() => {
       <!-- Streak line: shown in view + empty, hidden while editing -->
       <div v-if="mode === 'view'" class="mt-2 flex items-center gap-2 text-[13px] text-muted">
         <span class="size-1.5 rounded-full bg-primary" />{{ streakLine }}
+        <span v-if="unsaved" class="text-primary lg:hidden">· Unsaved changes</span>
       </div>
 
       <Alert v-if="saveError" color="error" variant="soft" :title="saveError" class="mt-4" />
@@ -140,25 +205,33 @@ const streakLine = computed(() => {
       <!-- Edit -->
       <div v-if="mode === 'edit'" class="mt-6 flex flex-1 flex-col">
         <NoteEditor v-model="draft" autofocus @save="save" />
+        <div v-if="unsaved" class="mt-4 flex items-center gap-3 text-[13px] text-muted">
+          <span class="text-primary">Unsaved changes</span>
+          <span>·</span>
+          <button type="button" class="hover:text-highlighted" @click="discard">Discard changes</button>
+        </div>
       </div>
 
       <!-- View -->
       <div v-else-if="hasNote" class="mt-7">
-        <NoteBody :body="note!.body!" :verses="data.verses" />
+        <NoteBody :body="savedBody" :verses="data.verses" />
       </div>
 
-      <!-- Empty -->
+      <!-- Empty (possibly with a draft waiting) -->
       <div v-else class="mt-7 flex flex-1 flex-col">
         <button type="button" class="prose-note cursor-text text-left italic text-dimmed" @click="startEdit">
-          Start writing. Nothing is saved until you
-          <span class="lg:hidden">tap</span><span class="hidden lg:inline">click</span> Save.
-          Drop in a verse by typing its reference in brackets, like [Psalm 23:1].
+          <template v-if="unsaved">You have unsaved changes for this day. Open the editor to continue or discard them.</template>
+          <template v-else>
+            Start writing. Nothing is saved until you
+            <span class="lg:hidden">tap</span><span class="hidden lg:inline">click</span> Save.
+            Drop in a verse by typing its reference in brackets, like [Psalm 23:1].
+          </template>
         </button>
         <Button size="lg" class="mt-10 hidden self-start lg:inline-flex" @click="startEdit">
-          {{ isToday ? "Start today's note" : 'Write this day' }}
+          {{ unsaved ? 'Continue writing' : isToday ? "Start today's note" : 'Write this day' }}
         </Button>
         <div class="mt-auto pt-10 lg:hidden">
-          <Button size="xl" block @click="startEdit">{{ isToday ? "Start today's note" : 'Write this day' }}</Button>
+          <Button size="xl" block @click="startEdit">{{ unsaved ? 'Continue writing' : isToday ? "Start today's note" : 'Write this day' }}</Button>
         </div>
       </div>
     </main>

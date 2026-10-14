@@ -97,7 +97,7 @@ onMounted(() => {
     <!-- Desktop: hint line -->
     <p class="mt-6 hidden text-[13px] leading-relaxed text-dimmed lg:block">
       Verses: type a reference in brackets — [John 3:16] — and it fills in when you save.
-      Autosaves a draft every 30s; Save (or Ctrl+Enter) publishes the day.
+      Changes are kept as a draft as you type; Save (or Ctrl+Enter) publishes the day.
     </p>
   </div>
 </template>

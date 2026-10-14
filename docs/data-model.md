@@ -6,7 +6,7 @@ Derived from the screen specs in `screens/`. Kept deliberately small: two app ta
 
 - One note per calendar day. Raw text is the source of truth; verse tokens stay as `[Book C:V]` in the text.
 - 1000-word limit. Word count is shown live and validated on Save (derived, not stored).
-- Autosaved draft every 30s, invisible on the Today view until Save.
+- Draft autosaved every 5s while the text changes; shown as "Unsaved changes" until Save or Discard; dropped after 24h without changes.
 - "Saved 7:42 AM" timestamp on the Today view.
 - Verse tokens resolved on Save to reference + full verse text; unresolvable tokens stay in the text with a hint. Callouts are rendered at display time.
 - Notes list: every day with a saved note, newest first, grouped by month, with a first-line preview.
@@ -26,7 +26,8 @@ One row per (user, date). Saved body and draft live on the same row.
 | user_id      | uuid, fk → neon_auth.user.id | Neon Auth user. Part of the unique key. `ON DELETE CASCADE`.      |
 | note_date    | date                 | Local calendar day the note is for. Unique with `user_id`.             |
 | body         | text, nullable       | Saved (published) raw text incl. tokens. NULL = never saved.           |
-| draft_body   | text, nullable       | Autosaved draft. Set to NULL on Save. NULL = no pending draft.         |
+| draft_body   | text, nullable       | Autosaved draft. Set to NULL on Save or Discard. NULL = no pending draft. |
+| draft_updated_at | timestamp, nullable | Last real change to the draft. Drafts untouched for 24h are dropped on read. |
 | saved_at     | timestamp, nullable  | When `body` was last published. Drives "Saved 7:42 AM".                |
 | created_at   | timestamp            |                                                                        |
 | updated_at   | timestamp            | Bumped by autosave and Save.                                           |
